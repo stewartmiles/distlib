@@ -6,6 +6,8 @@
 #
 from __future__ import unicode_literals
 
+import glob
+import importlib
 import io
 import os
 import re
@@ -636,28 +638,30 @@ class WheelTestCase(DistlibTestCase):
         self.assertNotIn(fn, sys.path)
 
     def test_mount_extensions(self):
-        if PYVER == 'py27':
-            fn = 'minimext-0.1-cp27-none-linux_x86_64.whl'
-        elif PYVER == 'py32':
-            fn = 'minimext-0.1-cp32-cp32mu-linux_x86_64.whl'
-        elif PYVER == 'py33':
-            fn = 'minimext-0.1-cp33-cp33m-linux_x86_64.whl'
-        else:
-            fn = None
-        if not fn:  # pragma: no cover
-            raise unittest.SkipTest('Suitable wheel not found.')
-        fn = os.path.join(HERE, fn)
-        w = Wheel(fn)
-        if not w.is_compatible() or not w.is_mountable():  # pragma: no cover
+        # Try to find test wheels that are compatible with the current
+        # interpreter.
+        wheels_filenames = glob.glob(os.path.join(HERE, 'minimext*.whl'))
+        compatible_wheels = []
+        for wheel_filename in sorted(wheels_filenames):
+            wheel_to_query = Wheel(wheel_filename)
+            if wheel_to_query.is_compatible():
+                compatible_wheels.append(wheel_to_query)
+
+        if not compatible_wheels:  # pragma: no cover
+            raise unittest.SkipTest('Suitable wheel(s) not found.')
+        if not any(wheel.is_mountable() for wheel in compatible_wheels):  # pragma: no cover
             raise unittest.SkipTest('Wheel not suitable for mounting.')
-        self.assertRaises(ImportError, __import__, 'minimext')
-        w.mount()
-        mod = __import__('minimext')
-        self.assertIs(mod, sys.modules['minimext'])
-        self.assertEqual(mod.fib(10), 55)
-        w.unmount()
-        del sys.modules['minimext']
-        self.assertRaises(ImportError, __import__, 'minimext')
+
+        module_name = 'minimext.calculate'
+        for wheel in compatible_wheels:
+            self.assertRaises(ImportError, importlib.import_module, module_name)
+            wheel.mount()
+            module = importlib.import_module(module_name)
+            self.assertIs(module, sys.modules[module_name], msg=wheel.filename)
+            self.assertEqual(module.fib(10), 55, msg=wheel.filename)
+            wheel.unmount()
+            del sys.modules[module_name]
+            self.assertRaises(ImportError, importlib.import_module, module_name)
 
     def test_local_version(self):
         w = Wheel('dummy-0.1_1.2')

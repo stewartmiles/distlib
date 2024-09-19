@@ -751,26 +751,38 @@ class Wheel(object):
                 with zf.open(arcname) as bf:
                     wf = wrapper(bf)
                     extensions = json.load(wf)
-                    cache = self._get_dylib_cache()
-                    prefix = cache.prefix_to_dir(self.filename, use_abspath=False)
-                    cache_base = os.path.join(cache.base, prefix)
-                    if not os.path.isdir(cache_base):
-                        os.makedirs(cache_base)
-                    for name, relpath in extensions.items():
-                        dest = os.path.join(cache_base, convert_path(relpath))
-                        if not os.path.exists(dest):
-                            extract = True
-                        else:
-                            file_time = os.stat(dest).st_mtime
-                            file_time = datetime.datetime.fromtimestamp(file_time)
-                            info = zf.getinfo(relpath)
-                            wheel_time = datetime.datetime(*info.date_time)
-                            extract = wheel_time > file_time
-                        if extract:
-                            zf.extract(relpath, cache_base)
-                        result.append((name, dest))
             except KeyError:
-                pass
+                extensions = {}
+                suffixes = _get_suffixes()
+                for member_info in zf.infolist():
+                    member_name = member_info.filename
+                    for suffix in suffixes:
+                        if member_name.endswith(suffix):
+                            extension_name = (
+                                os.path.normpath(member_name[:-len(suffix)])
+                                .replace(os.path.sep, '.'))
+                            extensions[extension_name] = member_name
+                            break
+
+            if extensions:
+                cache = self._get_dylib_cache()
+                prefix = cache.prefix_to_dir(self.filename, use_abspath=False)
+                cache_base = os.path.join(cache.base, prefix)
+                if not os.path.isdir(cache_base):
+                    os.makedirs(cache_base)
+                for name, relpath in extensions.items():
+                    dest = os.path.join(cache_base, convert_path(relpath))
+                    if not os.path.exists(dest):
+                        extract = True
+                    else:
+                        file_time = os.stat(dest).st_mtime
+                        file_time = datetime.datetime.fromtimestamp(file_time)
+                        info = zf.getinfo(relpath)
+                        wheel_time = datetime.datetime(*info.date_time)
+                        extract = wheel_time > file_time
+                    if extract:
+                        zf.extract(relpath, cache_base)
+                    result.append((name, dest))
         return result
 
     def is_compatible(self):
